@@ -1,0 +1,4 @@
+{
+    "gitlabURL": "https://gitlab.example.com",
+    "accessToken": "secret-token"
+}
