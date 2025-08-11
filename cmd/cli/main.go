@@ -6,6 +6,8 @@ import (
 	"gregaf/gitlabctl/internal/commands"
 	"gregaf/gitlabctl/internal/config"
 	"gregaf/gitlabctl/internal/services"
+	"gregaf/gitlabctl/internal/utils"
+	"io"
 	"log/slog"
 	"os"
 )
@@ -17,8 +19,11 @@ var (
 
 func main() {
 	flag.Parse()
-
 	args := flag.Args()
+
+	outputStream := utils.GetOutputStream(*_flagVerbose, os.Stderr, io.Discard)
+
+	logger := slog.New(slog.NewTextHandler(outputStream, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "Please provide a subcommand (e.g., 'verify').")
@@ -31,7 +36,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{}))
 	gitlabService := services.NewGitlabService(config, logger)
 	commandHandler := commands.NewCommandHandler(gitlabService, logger)
 

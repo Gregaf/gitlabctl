@@ -30,4 +30,17 @@ func (ch *CommandHandler) CommandVerify(args []string) {
 	}
 
 	ch.logger.Debug("Found projects missing branch", "targetBranch", *flagBranchName, "missing", missingBranchProjects, "projects", gitlabProjects)
+
+	projectNames := []string{}
+	for _, e := range missingBranchProjects {
+		projectNames = append(projectNames, e.NamespacePath)
+	}
+
+	out := strings.Join(projectNames, " ")
+
+	if len(projectNames) <= 0 {
+		out = "All projects pass validation"
+	}
+
+	fmt.Println(out)
 }

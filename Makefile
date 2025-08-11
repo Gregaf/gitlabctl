@@ -7,7 +7,7 @@ ENTRY_DIR := cmd
 ENTRY_POINTS := $(shell find $(ENTRY_DIR) -name "*.go")
 
 BIN_DIR := bin
-BIN_NAME := main
+BIN_NAME := gitlabctl
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
@@ -43,8 +43,8 @@ build-linux: $(BIN_DIR) ## Build for Linux
 	@for entry in $(ENTRY_POINTS); do \
 		entry_name=$$(basename $$(dirname $$entry)); \
 		echo "Building $(BIN_NAME) for Linux..."; \
-		GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BIN_DIR)/$(BIN_NAME)-linux-amd64 $$entry; \
-		GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o $(BIN_DIR)/$(BIN_NAME)-linux-arm64 $$entry; \
+		GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BIN_DIR)/$(BIN_NAME) $$entry; \
+ 		GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o $(BIN_DIR)/$(BIN_NAME)-linux-arm64 $$entry; \
 	done
 
 build-windows: $(BIN_DIR) ## Build for Windows
