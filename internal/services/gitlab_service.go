@@ -32,7 +32,7 @@ func (gs *GitlabService) setGitlabHeaders(req *http.Request) {
 	req.Header.Set("PRIVATE-TOKEN", gs.configuration.AccessToken)
 }
 
-func (gs *GitlabService) HasBranch(gitlabProjects []GitlabProject, targetBranch string) ([]GitlabProject, error) {
+func (gs *GitlabService) BulkHasBranch(gitlabProjects []GitlabProject, targetBranch string) ([]GitlabProject, error) {
 	missingBranchProjects := []GitlabProject{}
 	for _, project := range gitlabProjects {
 		url := fmt.Sprintf("%s/projects/%d/repository/branches/%s", gs.configuration.GitlabURL, project.ProjectID, targetBranch)
@@ -57,6 +57,34 @@ func (gs *GitlabService) HasBranch(gitlabProjects []GitlabProject, targetBranch 
 		} else {
 			return nil, fmt.Errorf("Error unexpected status code '%d' for '%s' Gitlab project", res.StatusCode, project.Name)
 		}
+	}
+
+	return missingBranchProjects, nil
+}
+
+func (gs *GitlabService) HasBranch(gitlabProjects GitlabProject, targetBranch string) error {
+
+	url := fmt.Sprintf("%s/projects/%d/repository/branches/%s", gs.configuration.GitlabURL, project.ProjectID, targetBranch)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Println("Error creating request", err)
+		return nil, fmt.Errorf("Error creating branch check request: %w", err)
+	}
+	gs.setGitlabHeaders(req)
+
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Error sending branch check request: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusNotFound {
+		missingBranchProjects = append(missingBranchProjects, project)
+	} else if res.StatusCode == http.StatusOK {
+		gs.logger.Debug("Branch exists", "branch", project.Name)
+	} else {
+		return nil, fmt.Errorf("Error unexpected status code '%d' for '%s' Gitlab project", res.StatusCode, project.Name)
 	}
 
 	return missingBranchProjects, nil
@@ -101,4 +129,8 @@ func (gs *GitlabService) FindGitlabProjects(projects []string) ([]GitlabProject,
 	}
 
 	return gitlabProjects, nil
+}
+
+func (gs *GitlabService) CreateBranch(gitlabProject GitlabProject, baseBranch string) error {
+	return fmt.Errorf("unimplemented function")
 }
