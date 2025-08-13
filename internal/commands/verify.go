@@ -24,7 +24,7 @@ func (ch *CommandHandler) CommandVerify(args []string) {
 
 	gitlabProjects, _ := ch.gitlabService.FindGitlabProjects(projects)
 
-	missingBranchProjects, err := ch.gitlabService.HasBranch(gitlabProjects, *flagBranchName)
+	missingBranchProjects, err := ch.gitlabService.BulkHasBranch(gitlabProjects, *flagBranchName)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
