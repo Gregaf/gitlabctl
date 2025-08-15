@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"gregaf/gitlabctl/internal/commands"
@@ -9,14 +10,17 @@ import (
 	"gregaf/gitlabctl/internal/utils"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 )
 
 var (
-	_flagConfig  = flag.String("config", "config.json", "Path to the configuration file")
-	_flagVerbose = flag.Bool("verbose", false, "Turn on verbose logging")
+	_flagConfig   = flag.String("config", "config.json", "Path to the configuration file")
+	_flagVerbose  = flag.Bool("verbose", false, "Turn on verbose logging")
+	_flagInsecure = flag.Bool("insecure", false, "Turn off TLS")
 )
 
+// TODO: Shift logic down into command handler, main shouldnt need much logic.
 func main() {
 	flag.Parse()
 	args := flag.Args()
@@ -36,7 +40,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	gitlabService := services.NewGitlabService(config, logger)
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: *_flagInsecure,
+	}
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
+	}
+
+	gitlabService := services.NewGitlabService(client, config, logger)
 	commandHandler := commands.NewCommandHandler(gitlabService, logger)
 
 	commandHandler.Handle("cmd", args)

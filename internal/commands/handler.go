@@ -16,6 +16,8 @@ func NewCommandHandler(gitlabService *services.GitlabService, logger *slog.Logge
 	return &CommandHandler{gitlabService: gitlabService, logger: logger}
 }
 
+type commandFunc func(args []string) (string, error)
+
 func (ch *CommandHandler) Handle(cmd string, args []string) {
 	help := "Add the subcommand 'edit' or 'list'!"
 
@@ -25,12 +27,27 @@ func (ch *CommandHandler) Handle(cmd string, args []string) {
 		fmt.Fprintln(os.Stderr, help)
 		os.Exit(0)
 	}
-	switch args[0] {
-	case "verify":
-		ch.CommandVerify(args)
-	default:
+
+	commands := map[string]commandFunc{
+		"verify": ch.CommandVerify,
+	}
+
+	handler, ok := commands[args[0]]
+	if !ok {
 		fmt.Fprintln(os.Stderr, help)
 		os.Exit(0)
 	}
 
+	out, err := handler(args)
+	handleOutput(out, err)
+}
+
+func handleOutput(out string, err error) {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	fmt.Fprintln(os.Stdout, out)
+	os.Exit(0)
 }

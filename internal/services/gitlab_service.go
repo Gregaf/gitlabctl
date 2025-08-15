@@ -1,15 +1,21 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"gregaf/gitlabctl/internal/config"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
+	"slices"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type GitlabService struct {
+	client        *http.Client
 	configuration *config.Config
 	logger        *slog.Logger
 }
@@ -21,116 +27,126 @@ type GitlabProject struct {
 	NamespacePath string  `json:"path_with_namespace"`
 }
 
-func NewGitlabService(configuration *config.Config, logger *slog.Logger) *GitlabService {
+func NewGitlabService(client *http.Client, configuration *config.Config, logger *slog.Logger) *GitlabService {
 	return &GitlabService{
+		client:        client,
 		configuration: configuration,
 		logger:        logger,
 	}
 }
 
-func (gs *GitlabService) setGitlabHeaders(req *http.Request) {
-	req.Header.Set("PRIVATE-TOKEN", gs.configuration.AccessToken)
-}
-
 func (gs *GitlabService) BulkHasBranch(gitlabProjects []GitlabProject, targetBranch string) ([]GitlabProject, error) {
+	g, ctx := errgroup.WithContext(context.TODO())
+
+	results := make([]bool, len(gitlabProjects))
+	for i, project := range gitlabProjects {
+		i, project := i, project
+		g.Go(func() error {
+			result, err := gs.HasBranch(ctx, project, targetBranch)
+			if err == nil {
+				results[i] = result
+			}
+			return err
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
 	missingBranchProjects := []GitlabProject{}
-	for _, project := range gitlabProjects {
-		url := fmt.Sprintf("%s/projects/%d/repository/branches/%s", gs.configuration.GitlabURL, project.ProjectID, targetBranch)
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			log.Println("Error creating request", err)
-			return nil, fmt.Errorf("Error creating branch check request: %w", err)
-		}
-		gs.setGitlabHeaders(req)
-
-		client := &http.Client{}
-		res, err := client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("Error sending branch check request: %w", err)
-		}
-		defer res.Body.Close()
-
-		if res.StatusCode == http.StatusNotFound {
+	for i, project := range gitlabProjects {
+		if results[i] == false {
 			missingBranchProjects = append(missingBranchProjects, project)
-		} else if res.StatusCode == http.StatusOK {
-			gs.logger.Debug("Branch exists", "branch", project.Name)
-		} else {
-			return nil, fmt.Errorf("Error unexpected status code '%d' for '%s' Gitlab project", res.StatusCode, project.Name)
 		}
 	}
 
 	return missingBranchProjects, nil
 }
 
-func (gs *GitlabService) HasBranch(gitlabProjects GitlabProject, targetBranch string) error {
-
-	url := fmt.Sprintf("%s/projects/%d/repository/branches/%s", gs.configuration.GitlabURL, project.ProjectID, targetBranch)
-	req, err := http.NewRequest("GET", url, nil)
+func (gs *GitlabService) HasBranch(ctx context.Context, gitlabProject GitlabProject, targetBranch string) (bool, error) {
+	url := fmt.Sprintf("%s/projects/%d/repository/branches/%s", gs.configuration.GitlabURL, gitlabProject.ProjectID, targetBranch)
+	req, err := gs.getGitlabRequest(ctx, "GET", url, nil)
 	if err != nil {
-		log.Println("Error creating request", err)
-		return nil, fmt.Errorf("Error creating branch check request: %w", err)
+		return false, fmt.Errorf("Error creating branch check request: %w", err)
 	}
-	gs.setGitlabHeaders(req)
 
-	client := &http.Client{}
-	res, err := client.Do(req)
+	res, err := gs.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Error sending branch check request: %w", err)
+		return false, fmt.Errorf("Error sending branch check request: %w", err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode == http.StatusNotFound {
-		missingBranchProjects = append(missingBranchProjects, project)
+		return false, nil
 	} else if res.StatusCode == http.StatusOK {
-		gs.logger.Debug("Branch exists", "branch", project.Name)
+		gs.logger.Debug("Branch exists", "branch", gitlabProject.Name)
 	} else {
-		return nil, fmt.Errorf("Error unexpected status code '%d' for '%s' Gitlab project", res.StatusCode, project.Name)
+		return false, fmt.Errorf("Error unexpected status code '%d' for '%s' Gitlab project", res.StatusCode, gitlabProject.Name)
 	}
 
-	return missingBranchProjects, nil
+	return true, nil
+}
+
+func (gs *GitlabService) CreateBranch(gitlabProject GitlabProject, newBranch, baseBranch string) error {
+	return fmt.Errorf("unimplemented")
 }
 
 func (gs *GitlabService) FindGitlabProjects(projects []string) ([]GitlabProject, error) {
-	ch := make(chan []GitlabProject, len(projects))
+	g, ctx := errgroup.WithContext(context.TODO())
 
-	for _, project := range projects {
-		go func() {
-			url := fmt.Sprintf("%s/projects?search=%s", gs.configuration.GitlabURL, project)
-			req, err := http.NewRequest("GET", url, nil)
-			if err != nil {
-				log.Println("Erraor creating request", err)
-				return
+	results := make([][]GitlabProject, len(projects))
+	for i, project := range projects {
+		i, project := i, project
+		g.Go(func() error {
+			result, err := gs.FindGitlabProject(ctx, project)
+			if err == nil {
+				results[i] = result
 			}
-
-			req.Header.Set("PRIVATE-TOKEN", gs.configuration.AccessToken)
-
-			client := &http.Client{}
-			res, err := client.Do(req)
-			if err != nil {
-				log.Println("Error sending request", err)
-				return
-			}
-			defer res.Body.Close()
-
-			var body []GitlabProject
-			err = json.NewDecoder(res.Body).Decode(&body)
-			if err != nil {
-				log.Println("Error decoding response body", err)
-			}
-
-			ch <- body
-		}()
+			return err
+		})
 	}
 
-	gitlabProjects := []GitlabProject{}
-	for range projects {
-		res := <-ch
-		gitlabProjects = append(gitlabProjects, res...)
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
-	return gitlabProjects, nil
+	aggGitlabProjects := slices.Concat(results...)
+
+	return aggGitlabProjects, nil
 }
 
-func (gs *GitlabService) CreateBranch(gitlabProject GitlabProject, baseBranch string) error {
-	return fmt.Errorf("unimplemented function")
+func (gs *GitlabService) FindGitlabProject(ctx context.Context, project string) ([]GitlabProject, error) {
+	url := fmt.Sprintf("%s/projects?search=%s", gs.configuration.GitlabURL, project)
+	req, err := gs.getGitlabRequest(ctx, "GET", url, nil)
+	if err != nil {
+		log.Println("Erraor creating request", err)
+		return nil, fmt.Errorf("failed create request: %w", err)
+	}
+
+	res, err := gs.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed http request: %w", err)
+	}
+	defer res.Body.Close()
+
+	body := &[]GitlabProject{}
+	err = json.NewDecoder(res.Body).Decode(body)
+	if err != nil {
+		log.Println("Error decoding response body", err)
+		return nil, fmt.Errorf("failed decode json: %w", err)
+	}
+
+	return *body, nil
+}
+
+func (gs *GitlabService) getGitlabRequest(ctx context.Context, method, url string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("PRIVATE-TOKEN", gs.configuration.AccessToken)
+
+	return req, nil
 }
