@@ -3,11 +3,10 @@ package commands
 import (
 	"flag"
 	"fmt"
-	"os"
 	"strings"
 )
 
-func (ch *CommandHandler) CommandVerify(args []string) {
+func (ch *CommandHandler) CommandVerify(args []string) (string, error) {
 	flagSetVerify := flag.NewFlagSet("verify", flag.ExitOnError)
 	flagProjects := flagSetVerify.String("projects", "", "Gitlab Projects to verify, comma separated")
 	flagBranchName := flagSetVerify.String("branch", "", "Gitlab Branch name")
@@ -22,11 +21,14 @@ func (ch *CommandHandler) CommandVerify(args []string) {
 		}
 	}
 
-	gitlabProjects, _ := ch.gitlabService.FindGitlabProjects(projects)
+	gitlabProjects, err := ch.gitlabService.FindGitlabProjects(projects)
+	if err != nil {
+		return "", fmt.Errorf("failed to find gitlab projects: %w", err)
+	}
 
 	missingBranchProjects, err := ch.gitlabService.BulkHasBranch(gitlabProjects, *flagBranchName)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		return "", fmt.Errorf("failed to check branches: %w", err)
 	}
 
 	ch.logger.Debug("Found projects missing branch", "targetBranch", *flagBranchName, "missing", missingBranchProjects, "projects", gitlabProjects)
@@ -42,5 +44,5 @@ func (ch *CommandHandler) CommandVerify(args []string) {
 		out = "All projects pass validation"
 	}
 
-	fmt.Println(out)
+	return out, nil
 }
